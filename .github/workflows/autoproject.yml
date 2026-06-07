@@ -1,0 +1,62 @@
+name: Auto Project Pipeline
+
+on:
+  # Runs on 1st and 15th of every month at 4:00 AM UTC (9:30 AM IST)
+  schedule:
+    - cron: '0 4 1,15 * *'
+
+  # Manual trigger with optional test mode
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Run in test mode (skip GitHub repo creation and Vercel deployment, just log output)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+permissions:
+  contents: write  # Needed to push updated projects_log.json back to repo
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      # 2. Set up Python 3.11
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 3. Install dependencies
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # 4. Run the pipeline
+      - name: Run pipeline
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TEST_MODE: ${{ github.event.inputs.test_mode || 'false' }}
+        run: python pipeline.py
+
+      # 5. Commit and push updated projects_log.json
+      - name: Commit updated projects log
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add projects_log.json
+          git diff --cached --quiet || git commit -m "📝 Update projects_log.json after pipeline run"
+          git push
