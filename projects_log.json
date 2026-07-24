@@ -6,5 +6,13 @@
     "live_url": "https://pomodoro-flow-20260724-181935-d9b3y69ad-amateurcoder9s-projects.vercel.app",
     "linkedin_success": false,
     "timestamp": "2026-07-24T18:19:47.739625"
+  },
+  {
+    "title": "PixelGrid Art Studio",
+    "description": "A fully-featured pixel art editor with custom canvas sizes, color palette selection, toolsets, and instant PNG export.",
+    "repo_url": "https://github.com/AmateurCoder9/pixelgrid-art-studio-20260724-185726",
+    "live_url": "https://pixelgrid-art-studio-20260724-185726-2yxgvwews.vercel.app",
+    "linkedin_success": true,
+    "timestamp": "2026-07-24T18:57:38.472972"
   }
 ]
