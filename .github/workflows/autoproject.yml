@@ -1,15 +1,13 @@
 name: Auto Project Pipeline
 
 on:
-  # Runs on 1st and 15th of every month at 4:00 AM UTC (9:30 AM IST)
   schedule:
-    - cron: '0 4 1,15 * *'
-
-  # Manual trigger with optional test mode
+    # Runs at 09:00 UTC on the 1st and 15th of every month (~every 2 weeks)
+    - cron: '0 9 1,15 * *'
   workflow_dispatch:
     inputs:
       test_mode:
-        description: 'Run in test mode (skip GitHub repo creation and Vercel deployment, just log output)'
+        description: 'Run without pushing to GitHub/Vercel/LinkedIn (dry run)'
         required: false
         default: 'false'
         type: choice
@@ -17,48 +15,43 @@ on:
           - 'false'
           - 'true'
 
-permissions:
-  contents: write  # Needed to push updated projects_log.json back to repo
+env:
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  GMAIL_USER: ${{ secrets.GMAIL_USER }}
+  GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+  NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+  GITHUB_TOKEN: ${{ secrets.PIPELINE_GITHUB_TOKEN }}
+  LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+  LINKEDIN_PERSON_URN: ${{ secrets.LINKEDIN_PERSON_URN }}
+  LINKEDIN_TOKEN_EXPIRES_AT: ${{ secrets.LINKEDIN_TOKEN_EXPIRES_AT }}
+  TEST_MODE: ${{ github.event.inputs.test_mode || 'false' }}
 
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
-
     steps:
-      # 1. Checkout the repository
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
-        with:
-          persist-credentials: true
-          fetch-depth: 0
 
-      # 2. Set up Python 3.11
-      - name: Set up Python 3.11
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
-      # 3. Install dependencies
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # 4. Run the pipeline
       - name: Run pipeline
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
-          LINKEDIN_PERSON_URN: ${{ secrets.LINKEDIN_PERSON_URN }}
-          TEST_MODE: ${{ github.event.inputs.test_mode || 'false' }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: python pipeline.py
 
-      # 5. Commit and push updated projects_log.json
-      - name: Commit updated projects log
+      - name: Commit updated project log
+        if: always()
         run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git config user.name "auto-project-pipeline"
+          git config user.email "actions@github.com"
           git add projects_log.json
-          git diff --cached --quiet || git commit -m "📝 Update projects_log.json after pipeline run"
-          git push
+          git diff --staged --quiet || git commit -m "Update projects log [skip ci]"
+          git push || echo "Nothing to push or push failed — check logs above"

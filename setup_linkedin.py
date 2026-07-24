@@ -1,218 +1,173 @@
 """
-LinkedIn OAuth Setup Helper
-============================
-One-time setup script to obtain a LinkedIn access token for automated posting.
+setup_linkedin.py
 
-How it works:
-1. You provide your LinkedIn app's Client ID and Client Secret
-2. It opens your browser to LinkedIn's authorization page
-3. You click "Allow"
-4. LinkedIn redirects to localhost where this script captures the auth code
-5. Script exchanges the code for an access token
-6. Prints the token, person URN, and expiry — paste these as GitHub secrets
+Run this LOCALLY (not in GitHub Actions) to get a LinkedIn access token.
 
-Usage:
+WHY THIS IS NEEDED, AND WHY YOU'LL RUN IT AGAIN:
+LinkedIn's OAuth 2.0 requires a real browser login where you click
+"Allow" — this cannot be scripted headlessly for a personal-posting app.
+The resulting access token lasts ~60 days. LinkedIn does not currently
+issue refresh tokens for most developer apps in this product tier, so
+when the token expires, you run this script again. There is no way to
+avoid this step entirely — it is a LinkedIn platform constraint, not
+a limitation of this pipeline.
+
+BEFORE RUNNING THIS:
+  1. Create a LinkedIn Developer App at https://developer.linkedin.com
+  2. Under "Products", request "Share on LinkedIn" (usually instant)
+  3. Under "Auth", add this exact redirect URL:
+       http://localhost:8585/callback
+  4. Copy your Client ID and Client Secret — this script will ask for them
+
+USAGE:
     python setup_linkedin.py
-
-Prerequisites:
-    - A LinkedIn Developer App (create at https://developer.linkedin.com)
-    - "Share on LinkedIn" product enabled on your app
-    - Redirect URL set to: http://localhost:8585/callback
 """
 
 import http.server
-import json
-import os
-import sys
-import threading
-import time
+import socketserver
 import urllib.parse
 import webbrowser
-
-try:
-    import requests
-except ImportError:
-    print("Installing requests...")
-    os.system(f"{sys.executable} -m pip install requests")
-    import requests
-
-
-# ════════════════════════════════════════════════════════════
-# CONFIGURATION
-# ════════════════════════════════════════════════════════════
+import secrets as pysecrets
+import datetime as dt
+import sys
+import requests
 
 REDIRECT_URI = "http://localhost:8585/callback"
 AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization"
 TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
 PROFILE_URL = "https://api.linkedin.com/v2/userinfo"
 SCOPES = "openid profile w_member_social"
-LOCAL_PORT = 8585
+
+_captured_code = {"value": None, "error": None}
+
+
+class _CallbackHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query)
+
+        if "error" in params:
+            _captured_code["error"] = params.get(
+                "error_description", ["Unknown error"]
+            )[0]
+            self._respond("Authorization failed. You can close this tab.")
+        elif "code" in params:
+            _captured_code["value"] = params["code"][0]
+            self._respond("Authorization received! You can close this tab "
+                           "and return to your terminal.")
+        else:
+            self._respond("Waiting for LinkedIn redirect...")
+
+    def _respond(self, message: str):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.end_headers()
+        self.wfile.write(f"<html><body><h2>{message}</h2></body></html>".encode())
+
+    def log_message(self, format, *args):
+        pass  # suppress default request logging noise
+
+
+def _run_local_server_until_captured():
+    with socketserver.TCPServer(("localhost", 8585), _CallbackHandler) as httpd:
+        print("Waiting for LinkedIn redirect on http://localhost:8585 ...")
+        while _captured_code["value"] is None and _captured_code["error"] is None:
+            httpd.handle_request()
 
 
 def main():
     print("=" * 60)
-    print("LinkedIn OAuth Setup for Auto Project Pipeline")
+    print("LinkedIn OAuth Setup")
     print("=" * 60)
     print()
-    print("Before running this script, make sure you have:")
-    print("  1. Created a LinkedIn Developer App at:")
-    print("     https://developer.linkedin.com/")
-    print("  2. Requested 'Share on LinkedIn' product")
-    print("  3. Added this redirect URL in your app's Auth settings:")
-    print(f"     {REDIRECT_URI}")
-    print()
+    client_id = input("Client ID: ").strip()
+    client_secret = input("Client Secret: ").strip()
 
-    # Get credentials
-    client_id = input("Enter your LinkedIn Client ID: ").strip()
-    if not client_id:
-        print("Error: Client ID is required.")
+    if not client_id or not client_secret:
+        print("Both Client ID and Client Secret are required.", file=sys.stderr)
         sys.exit(1)
 
-    client_secret = input("Enter your LinkedIn Client Secret: ").strip()
-    if not client_secret:
-        print("Error: Client Secret is required.")
-        sys.exit(1)
-
-    print()
-    print("Opening your browser to LinkedIn authorization page...")
-    print("Please click 'Allow' to grant access.")
-    print()
-
-    # Build authorization URL
-    auth_params = urllib.parse.urlencode({
+    state = pysecrets.token_urlsafe(16)
+    auth_params = {
         "response_type": "code",
         "client_id": client_id,
         "redirect_uri": REDIRECT_URI,
+        "state": state,
         "scope": SCOPES,
-        "state": "auto_project_pipeline_setup",
-    })
-    auth_full_url = f"{AUTH_URL}?{auth_params}"
+    }
+    auth_url_full = f"{AUTH_URL}?{urllib.parse.urlencode(auth_params)}"
 
-    # Set up local server to capture the callback
-    auth_code_holder = {"code": None, "error": None}
+    print()
+    print("Opening your browser to LinkedIn. Click 'Allow' when prompted.")
+    print("If it doesn't open automatically, visit this URL manually:")
+    print(auth_url_full)
+    print()
+    webbrowser.open(auth_url_full)
 
-    class CallbackHandler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self):
-            parsed = urllib.parse.urlparse(self.path)
-            params = urllib.parse.parse_qs(parsed.query)
+    _run_local_server_until_captured()
 
-            if "code" in params:
-                auth_code_holder["code"] = params["code"][0]
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html")
-                self.end_headers()
-                self.wfile.write(b"""
-                <html><body style="font-family:sans-serif;text-align:center;padding:50px;">
-                <h1 style="color:green;">Authorization Successful!</h1>
-                <p>You can close this tab and return to the terminal.</p>
-                </body></html>
-                """)
-            elif "error" in params:
-                auth_code_holder["error"] = params.get("error_description", params["error"])[0]
-                self.send_response(400)
-                self.send_header("Content-Type", "text/html")
-                self.end_headers()
-                self.wfile.write(f"""
-                <html><body style="font-family:sans-serif;text-align:center;padding:50px;">
-                <h1 style="color:red;">Authorization Failed</h1>
-                <p>{auth_code_holder['error']}</p>
-                </body></html>
-                """.encode())
-            else:
-                self.send_response(404)
-                self.end_headers()
-
-        def log_message(self, format, *args):
-            pass  # Suppress server logs
-
-    server = http.server.HTTPServer(("localhost", LOCAL_PORT), CallbackHandler)
-    server.timeout = 120  # 2 minute timeout
-
-    # Open browser
-    webbrowser.open(auth_full_url)
-
-    # Wait for callback
-    print(f"Waiting for authorization (timeout: 2 minutes)...")
-    while auth_code_holder["code"] is None and auth_code_holder["error"] is None:
-        server.handle_request()
-
-    server.server_close()
-
-    if auth_code_holder["error"]:
-        print(f"\nError: {auth_code_holder['error']}")
+    if _captured_code["error"]:
+        print(f"\nLinkedIn returned an error: {_captured_code['error']}",
+              file=sys.stderr)
         sys.exit(1)
 
-    auth_code = auth_code_holder["code"]
-    print("Authorization code received!")
-    print()
+    code = _captured_code["value"]
+    print("\nAuthorization code received. Exchanging for access token...")
 
-    # Exchange code for access token
-    print("Exchanging authorization code for access token...")
-    token_resp = requests.post(TOKEN_URL, data={
-        "grant_type": "authorization_code",
-        "code": auth_code,
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "redirect_uri": REDIRECT_URI,
-    })
+    token_resp = requests.post(
+        TOKEN_URL,
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": REDIRECT_URI,
+            "client_id": client_id,
+            "client_secret": client_secret,
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=30,
+    )
 
     if token_resp.status_code != 200:
-        print(f"Error getting token: {token_resp.status_code}")
-        print(token_resp.text)
+        print(f"\nToken exchange failed (HTTP {token_resp.status_code}):",
+              file=sys.stderr)
+        print(token_resp.text, file=sys.stderr)
         sys.exit(1)
 
     token_data = token_resp.json()
     access_token = token_data["access_token"]
-    expires_in = token_data.get("expires_in", 5184000)  # Default 60 days
+    expires_in_seconds = token_data.get("expires_in", 60 * 24 * 3600)
+    expires_at = dt.datetime.now() + dt.timedelta(seconds=expires_in_seconds)
 
-    # Calculate expiry date
-    import datetime
-    expiry_date = datetime.datetime.now() + datetime.timedelta(seconds=expires_in)
-    expiry_str = expiry_date.strftime("%B %d, %Y")
-
-    print("Access token obtained!")
-    print()
-
-    # Get person URN (LinkedIn user ID)
-    print("Fetching your LinkedIn profile info...")
-    profile_resp = requests.get(PROFILE_URL, headers={
-        "Authorization": f"Bearer {access_token}",
-    })
-
+    print("Fetching your profile URN...")
+    profile_resp = requests.get(
+        PROFILE_URL,
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=30,
+    )
     if profile_resp.status_code != 200:
-        print(f"Warning: Could not fetch profile: {profile_resp.status_code}")
-        print("You'll need to find your LinkedIn person URN manually.")
-        person_urn = "urn:li:person:YOUR_ID_HERE"
+        print(f"\nProfile fetch failed (HTTP {profile_resp.status_code}). "
+              f"You have the access token below, but need to find your "
+              f"person URN manually — see LinkedIn's userinfo docs.",
+              file=sys.stderr)
+        person_urn = "URN_LOOKUP_FAILED_SEE_ABOVE"
     else:
-        profile = profile_resp.json()
-        person_id = profile.get("sub", "")
-        person_urn = f"urn:li:person:{person_id}"
-        name = profile.get("name", "Unknown")
-        print(f"  Logged in as: {name}")
+        sub = profile_resp.json().get("sub", "")
+        person_urn = f"urn:li:person:{sub}" if sub else "URN_NOT_FOUND"
 
-    # Print results
     print()
     print("=" * 60)
-    print("SETUP COMPLETE — Add these as GitHub Secrets:")
+    print("SUCCESS. Copy these into your GitHub repo secrets:")
+    print("(Settings -> Secrets and variables -> Actions -> New repository secret)")
+    print("=" * 60)
+    print(f"LINKEDIN_ACCESS_TOKEN = {access_token}")
+    print(f"LINKEDIN_PERSON_URN   = {person_urn}")
+    print(f"LINKEDIN_TOKEN_EXPIRES_AT = {expires_at.isoformat()}")
     print("=" * 60)
     print()
-    print(f"Go to: https://github.com/AmateurCoder9/auto-project-pipeline/settings/secrets/actions")
-    print()
-    print(f"Secret: LINKEDIN_ACCESS_TOKEN")
-    print(f"Value:  {access_token}")
-    print()
-    print(f"Secret: LINKEDIN_PERSON_URN")
-    print(f"Value:  {person_urn}")
-    print()
-    print(f"Secret: LINKEDIN_CLIENT_ID")
-    print(f"Value:  {client_id}")
-    print()
-    print(f"Secret: LINKEDIN_CLIENT_SECRET")
-    print(f"Value:  {client_secret}")
-    print()
-    print(f"Token expires: {expiry_str}")
-    print(f"(Re-run this script before then to get a new token)")
-    print("=" * 60)
+    print(f"This token expires around {expires_at.strftime('%B %d, %Y')} "
+          f"(~{expires_in_seconds // 86400} days from now).")
+    print("The pipeline will start warning you in its logs and email 7 "
+          "days before that date. When it does, run this script again.")
 
 
 if __name__ == "__main__":
