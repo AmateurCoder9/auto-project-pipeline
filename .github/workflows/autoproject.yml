@@ -22,9 +22,9 @@ permissions:
 env:
   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
   VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-  GMAIL_USER: ${{ secrets.GMAIL_USER }}
+  GMAIL_USER: vedant1ce1@gmail.com
   GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-  NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+  NOTIFY_EMAIL: vedant1ce1@gmail.com
   # Use PIPELINE_GITHUB_TOKEN if the user set a PAT, otherwise fall back to
   # the built-in Actions token (which has repo scope from permissions above)
   GITHUB_TOKEN: ${{ secrets.PIPELINE_GITHUB_TOKEN || github.token }}
