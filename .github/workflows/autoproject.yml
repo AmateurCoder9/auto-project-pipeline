@@ -15,13 +15,19 @@ on:
           - 'false'
           - 'true'
 
+# Grant the built-in GITHUB_TOKEN write permission to push log updates
+permissions:
+  contents: write
+
 env:
   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
   VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
   GMAIL_USER: ${{ secrets.GMAIL_USER }}
   GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
   NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
-  GITHUB_TOKEN: ${{ secrets.PIPELINE_GITHUB_TOKEN }}
+  # Use PIPELINE_GITHUB_TOKEN if the user set a PAT, otherwise fall back to
+  # the built-in Actions token (which has repo scope from permissions above)
+  GITHUB_TOKEN: ${{ secrets.PIPELINE_GITHUB_TOKEN || github.token }}
   LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
   LINKEDIN_PERSON_URN: ${{ secrets.LINKEDIN_PERSON_URN }}
   LINKEDIN_TOKEN_EXPIRES_AT: ${{ secrets.LINKEDIN_TOKEN_EXPIRES_AT }}
@@ -33,6 +39,9 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -54,4 +63,4 @@ jobs:
           git config user.email "actions@github.com"
           git add projects_log.json
           git diff --staged --quiet || git commit -m "Update projects log [skip ci]"
-          git push || echo "Nothing to push or push failed — check logs above"
+          git push || echo "Nothing to push or push failed - check logs above"

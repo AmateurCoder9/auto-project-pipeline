@@ -46,12 +46,18 @@ def load_log() -> list[dict]:
     if not os.path.exists(LOG_FILE):
         return []
     with open(LOG_FILE, "r") as f:
-        return json.load(f)
+        data = json.load(f)
+    # Handle both formats: plain list [] and dict {"projects": []}
+    if isinstance(data, dict):
+        return data.get("projects", [])
+    if isinstance(data, list):
+        return data
+    return []
 
 
 def save_log(log: list[dict]) -> None:
     with open(LOG_FILE, "w") as f:
-        json.dump(log, f, indent=2)
+        json.dump(log, f, indent=2)  # Save as plain list
 
 
 def gemini_generate(api_key: str, model: str, prompt: str, temperature: float) -> str:
@@ -230,8 +236,10 @@ def send_email_safe(subject: str, body: str) -> dict:
 
 def run_pipeline():
     gemini_key = os.environ["GEMINI_API_KEY"]
-    github_token = os.environ["GITHUB_TOKEN"]
-    github_owner = os.environ["GITHUB_REPOSITORY_OWNER"]
+    # GITHUB_TOKEN may come from secrets.PIPELINE_GITHUB_TOKEN or the
+    # built-in Actions token. Fall back gracefully.
+    github_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN", "")
+    github_owner = os.environ.get("GITHUB_REPOSITORY_OWNER", "AmateurCoder9")
     vercel_token = os.environ["VERCEL_TOKEN"]
 
     linkedin_token = os.environ.get("LINKEDIN_ACCESS_TOKEN")
