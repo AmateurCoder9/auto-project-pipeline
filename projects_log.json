@@ -14,5 +14,13 @@
     "live_url": "https://pixelgrid-art-studio-20260724-185726-2yxgvwews.vercel.app",
     "linkedin_success": true,
     "timestamp": "2026-07-24T18:57:38.472972"
+  },
+  {
+    "title": "HexGrid Rhythm Sequencer",
+    "description": "An interactive web-based step sequencer using a hexagonal grid and the browser Web Audio API to create ambient polyrhythmic loops.",
+    "repo_url": "https://github.com/AmateurCoder9/hexgrid-rhythm-sequencer-20260801-102642",
+    "live_url": "https://hexgrid-rhythm-sequencer-20260801-102642-oyznsxb6n.vercel.app",
+    "linkedin_success": true,
+    "timestamp": "2026-08-01T10:26:54.630065"
   }
 ]
