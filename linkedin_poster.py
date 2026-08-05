@@ -22,7 +22,7 @@ import sys
 import datetime as dt
 import requests
 
-LINKEDIN_API_VERSION = "202607"  # LinkedIn versions by year-month; bump periodically
+LINKEDIN_API_VERSION = "202401"
 POSTS_URL = "https://api.linkedin.com/rest/posts"
 
 
@@ -135,7 +135,8 @@ def post_to_linkedin(
 
     # Success — LinkedIn returns the post's URN in the x-restli-id header
     post_id = resp.headers.get("x-restli-id", "")
-    post_url = f"https://www.linkedin.com/feed/update/{post_id}/" if post_id else None
+    numeric_id = post_id.split(":")[-1] if post_id else ""
+    post_url = f"https://www.linkedin.com/feed/update/urn:li:ugcPost:{numeric_id}/" if numeric_id else None
     print(f"[linkedin_poster] Post succeeded: {post_url or '(no URL returned)'}",
           file=sys.stderr)
     return {"success": True, "post_url": post_url, "error": None}
