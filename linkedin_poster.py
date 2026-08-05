@@ -70,18 +70,58 @@ def post_to_linkedin(
 ) -> dict:
     """
     Publishes a text post to the given person's LinkedIn profile.
+    Tries /v2/ugcPosts first (standard for personal posts), then falls back to /rest/posts.
 
     Returns a dict: {"success": bool, "post_url": str | None, "error": str | None}
-    Never raises for expected failure modes (401/429/etc) — callers get
-    a structured result so the pipeline can log and continue.
     """
-    headers = {
+    if not person_urn.startswith("urn:li:"):
+        person_urn = f"urn:li:person:{person_urn}"
+
+    # Method 1: /v2/ugcPosts (proven for personal profiles)
+    ugc_url = "https://api.linkedin.com/v2/ugcPosts"
+    ugc_headers = {
+        "Authorization": f"Bearer {access_token}",
+        "X-Restli-Protocol-Version": "2.0.0",
+        "Content-Type": "application/json",
+    }
+    ugc_body = {
+        "author": person_urn,
+        "lifecycleState": "PUBLISHED",
+        "specificContent": {
+            "com.linkedin.ugc.ShareContent": {
+                "shareCommentary": {
+                    "text": caption
+                },
+                "shareMediaCategory": "NONE"
+            }
+        },
+        "visibility": {
+            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+        }
+    }
+
+    try:
+        resp = requests.post(ugc_url, headers=ugc_headers, json=ugc_body, timeout=30)
+        if resp.status_code in (200, 201):
+            data = resp.json()
+            post_id = data.get("id", "")
+            numeric_id = post_id.split(":")[-1] if post_id else ""
+            post_url = f"https://www.linkedin.com/feed/update/urn:li:ugcPost:{numeric_id}/" if numeric_id else None
+            print(f"[linkedin_poster] (v2/ugcPosts) Post succeeded: {post_url}", file=sys.stderr)
+            return {"success": True, "post_url": post_url, "error": None}
+        else:
+            print(f"[linkedin_poster] v2/ugcPosts returned {resp.status_code}: {resp.text[:300]}, falling back to /rest/posts...", file=sys.stderr)
+    except Exception as e:
+        print(f"[linkedin_poster] v2/ugcPosts error ({e}), falling back to /rest/posts...", file=sys.stderr)
+
+    # Method 2: /rest/posts (fallback)
+    rest_headers = {
         "Authorization": f"Bearer {access_token}",
         "LinkedIn-Version": LINKEDIN_API_VERSION,
         "X-Restli-Protocol-Version": "2.0.0",
         "Content-Type": "application/json",
     }
-    body = {
+    rest_body = {
         "author": person_urn,
         "commentary": caption,
         "visibility": "PUBLIC",
@@ -94,7 +134,7 @@ def post_to_linkedin(
     }
 
     try:
-        resp = requests.post(POSTS_URL, headers=headers, json=body, timeout=30)
+        resp = requests.post(POSTS_URL, headers=rest_headers, json=rest_body, timeout=30)
     except requests.RequestException as e:
         return {"success": False, "post_url": None,
                 "error": f"Network error contacting LinkedIn: {e}"}
@@ -102,12 +142,7 @@ def post_to_linkedin(
     if resp.status_code == 401:
         msg = (
             "LinkedIn returned 401 Unauthorized — the access token has "
-            "expired or was revoked. This is EXPECTED roughly every 60 "
-            "days (LinkedIn does not offer refresh tokens for most "
-            "developer apps). Fix: run `python setup_linkedin.py` "
-            "locally again, then update the LINKEDIN_ACCESS_TOKEN "
-            "GitHub secret with the new value. The rest of this "
-            "pipeline run (repo, deploy, email) is unaffected."
+            "expired or was revoked."
         )
         print(f"[linkedin_poster] {msg}", file=sys.stderr)
         return {"success": False, "post_url": None, "error": msg}
@@ -116,15 +151,13 @@ def post_to_linkedin(
         msg = (
             "LinkedIn returned 403 Forbidden — check that the app still "
             "has the 'Share on LinkedIn' product approved under the "
-            "Products tab at https://developer.linkedin.com, and that "
-            "LINKEDIN_PERSON_URN matches the account that authorized "
-            "the app."
+            "Products tab at https://developer.linkedin.com."
         )
         print(f"[linkedin_poster] {msg}", file=sys.stderr)
         return {"success": False, "post_url": None, "error": msg}
 
     if resp.status_code == 429:
-        msg = "LinkedIn returned 429 rate-limited. Will not retry within this run."
+        msg = "LinkedIn returned 429 rate-limited."
         print(f"[linkedin_poster] {msg}", file=sys.stderr)
         return {"success": False, "post_url": None, "error": msg}
 
@@ -133,10 +166,8 @@ def post_to_linkedin(
         print(f"[linkedin_poster] {msg}", file=sys.stderr)
         return {"success": False, "post_url": None, "error": msg}
 
-    # Success — LinkedIn returns the post's URN in the x-restli-id header
     post_id = resp.headers.get("x-restli-id", "")
     numeric_id = post_id.split(":")[-1] if post_id else ""
     post_url = f"https://www.linkedin.com/feed/update/urn:li:ugcPost:{numeric_id}/" if numeric_id else None
-    print(f"[linkedin_poster] Post succeeded: {post_url or '(no URL returned)'}",
-          file=sys.stderr)
+    print(f"[linkedin_poster] (rest/posts) Post succeeded: {post_url or '(no URL returned)'}", file=sys.stderr)
     return {"success": True, "post_url": post_url, "error": None}
