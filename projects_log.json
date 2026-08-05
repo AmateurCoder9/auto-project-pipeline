@@ -22,5 +22,13 @@
     "live_url": "https://hexgrid-rhythm-sequencer-20260801-102642-oyznsxb6n.vercel.app",
     "linkedin_success": true,
     "timestamp": "2026-08-01T10:26:54.630065"
+  },
+  {
+    "title": "Zen Garden Stones",
+    "description": "An interactive digital sandbox for placing stones, raking sand patterns, and finding calm.",
+    "repo_url": "https://github.com/AmateurCoder9/zen-garden-stones-20260805-053855",
+    "live_url": "https://zen-garden-stones-20260805-053855-4sk9vse3g.vercel.app",
+    "linkedin_success": true,
+    "timestamp": "2026-08-05T05:39:07.543996"
   }
 ]
