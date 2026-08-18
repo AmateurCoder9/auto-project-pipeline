@@ -1,0 +1,77 @@
+name: Auto Project Pipeline
+
+on:
+  schedule:
+    # Runs at 09:00 UTC on the 1st, 11th, and 21st of every month (~every 10 days)
+    - cron: '0 9 1,11,21 * *'
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Run without pushing to GitHub/Vercel/LinkedIn (dry run)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      dry_run:
+        description: 'Run everything except the LinkedIn POST (for testing)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+# Grant the built-in GITHUB_TOKEN write permission to push log updates
+permissions:
+  contents: write
+
+env:
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  GMAIL_USER: ${{ secrets.GMAIL_USER }}
+  GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+  NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+  # Use PIPELINE_GITHUB_TOKEN if the user set a PAT, otherwise fall back to
+  # the built-in Actions token (which has repo scope from permissions above)
+  GITHUB_TOKEN: ${{ secrets.PIPELINE_GITHUB_TOKEN || github.token }}
+  LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+  LINKEDIN_PERSON_URN: ${{ secrets.LINKEDIN_PERSON_URN }}
+  LINKEDIN_TOKEN_EXPIRES_AT: ${{ secrets.LINKEDIN_TOKEN_EXPIRES_AT }}
+  TEST_MODE: ${{ github.event.inputs.test_mode || 'false' }}
+  DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium --with-deps
+
+      - name: Run pipeline
+        env:
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: python pipeline.py
+
+      - name: Commit updated project log
+        if: always()
+        run: |
+          git config user.name "auto-project-pipeline"
+          git config user.email "actions@github.com"
+          git add projects_log.json
+          git diff --staged --quiet || git commit -m "Update projects log [skip ci]"
+          git push || echo "Nothing to push or push failed - check logs above"
